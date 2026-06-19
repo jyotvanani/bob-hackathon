@@ -7,6 +7,7 @@ import {
   stopTrafficSimulator,
   getSimulatorStatus
 } from '../api/trafficApi';
+import { useRealtime } from '../realtime/RealtimeContext.jsx';
 import RiskBadge from '../components/RiskBadge.jsx';
 import RiskScoreCard from '../components/RiskScoreCard.jsx';
 import StatCard from '../components/StatCard.jsx';
@@ -50,7 +51,7 @@ const presets = {
 };
 
 const initial = { ...presets.normal };
-const POLL_MS = 150;
+const MAX_EVENTS = 80;
 
 export default function TrafficMonitorPage() {
   const [form, setForm] = useState(initial);
@@ -63,30 +64,17 @@ export default function TrafficMonitorPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
-  const [pulse, setPulse] = useState(0); // visual heartbeat
-  const lastTotalRef = useRef(0);
-  const seenAtRef = useRef({}); // event_id -> timestamp first seen
+  const seenAtRef = useRef({});
   const [now, setNow] = useState(Date.now());
+  const summaryTimerRef = useRef(null);
 
-  // tick a clock so "is new" badges fade out smoothly
+  const { connected, subscribe } = useRealtime();
+
+  // tick a clock so the "is new" highlight fades smoothly
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(id);
   }, []);
-
-  // record arrival time for any new event id we haven't seen before
-  useEffect(() => {
-    const map = seenAtRef.current;
-    const t = Date.now();
-    events.forEach((e) => {
-      if (map[e.id] === undefined) map[e.id] = t;
-    });
-  }, [events]);
-
-  function isNewEvent(e) {
-    const t = seenAtRef.current[e.id];
-    return t !== undefined && now - t < 3000;
-  }
 
   async function refresh() {
     try {
@@ -95,13 +83,13 @@ export default function TrafficMonitorPage() {
         getTrafficSummary(),
         getSimulatorStatus()
       ]);
-      setEvents(ev);
+      setEvents(ev.slice(0, MAX_EVENTS));
       setSummary(sm);
       setSimStatus(st);
-      if (sm.total_events !== lastTotalRef.current) {
-        lastTotalRef.current = sm.total_events;
-        setPulse((p) => p + 1);
-      }
+      const t = Date.now();
+      ev.forEach((e) => {
+        if (seenAtRef.current[e.id] === undefined) seenAtRef.current[e.id] = t;
+      });
     } catch (err) {
       setError('Failed to load traffic data');
     } finally {
@@ -109,15 +97,52 @@ export default function TrafficMonitorPage() {
     }
   }
 
-  useEffect(() => {
-    refresh();
-  }, []);
+  function scheduleSummaryRefresh() {
+    if (summaryTimerRef.current) return;
+    summaryTimerRef.current = window.setTimeout(async () => {
+      summaryTimerRef.current = null;
+      try {
+        const sm = await getTrafficSummary();
+        setSummary(sm);
+      } catch (_) {
+        // ignore
+      }
+    }, 500);
+  }
 
   useEffect(() => {
-    if (!simStatus.running) return undefined;
-    const id = setInterval(refresh, POLL_MS);
-    return () => clearInterval(id);
-  }, [simStatus.running]);
+    refresh();
+    return () => {
+      if (summaryTimerRef.current) window.clearTimeout(summaryTimerRef.current);
+    };
+  }, []);
+
+  // Real-time subscriptions
+  useEffect(() => {
+    return subscribe((msg) => {
+      if (!msg) return;
+      if (msg.type === 'simulator') {
+        setSimStatus(msg.payload || { running: false });
+      } else if (msg.type === 'traffic_event') {
+        const e = msg.payload;
+        if (!e || !e.id) return;
+        if (seenAtRef.current[e.id] === undefined) {
+          seenAtRef.current[e.id] = Date.now();
+        }
+        setEvents((prev) => {
+          if (prev.some((x) => x.id === e.id)) return prev;
+          return [e, ...prev].slice(0, MAX_EVENTS);
+        });
+        scheduleSummaryRefresh();
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subscribe]);
+
+  function isNewEvent(e) {
+    const t = seenAtRef.current[e.id];
+    return t !== undefined && now - t < 3000;
+  }
 
   function applyPreset(key) {
     setForm({ ...presets[key] });
@@ -143,7 +168,6 @@ export default function TrafficMonitorPage() {
       };
       const data = await analyzeTraffic(payload);
       setResult(data);
-      refresh();
     } catch (err) {
       setError('Traffic analysis failed. Is the backend running?');
     } finally {
@@ -155,7 +179,6 @@ export default function TrafficMonitorPage() {
     setError('');
     try {
       await startTrafficSimulator({ rate_per_sec: Number(rate) || 2, distribution });
-      refresh();
     } catch (err) {
       setError('Could not start simulator');
     }
@@ -165,7 +188,6 @@ export default function TrafficMonitorPage() {
     setError('');
     try {
       await stopTrafficSimulator();
-      refresh();
     } catch (err) {
       setError('Could not stop simulator');
     }
@@ -177,6 +199,9 @@ export default function TrafficMonitorPage() {
         <h2>Fake User Traffic Detection</h2>
         <p className="muted">
           Detect bots, credential stuffing, and abusive automation patterns.
+          <span className={`ws-pill ${connected ? 'ws-on' : 'ws-off'}`}>
+            {connected ? 'WebSocket: live' : 'WebSocket: offline'}
+          </span>
         </p>
       </div>
 
@@ -186,7 +211,7 @@ export default function TrafficMonitorPage() {
             <div className="card-title" style={{ marginBottom: 4 }}>
               Real-time traffic simulator
               {simStatus.running && (
-                <span className="live-dot" key={pulse}>
+                <span className="live-dot">
                   <span className="live-pulse" /> LIVE
                 </span>
               )}
@@ -354,7 +379,7 @@ export default function TrafficMonitorPage() {
                 </tr>
               </thead>
               <tbody>
-                {events.slice(0, 50).map((e) => (
+                {events.map((e) => (
                   <tr key={e.id} className={isNewEvent(e) ? 'row-new' : ''}>
                     <td>
                       {e.id}

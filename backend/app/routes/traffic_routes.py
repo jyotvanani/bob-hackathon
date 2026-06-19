@@ -15,6 +15,7 @@ from app.schemas.traffic_schema import (
 )
 from app.services.traffic_service import calculate_traffic_risk
 from app.services.traffic_simulator import simulator
+from app.websocket import manager
 
 router = APIRouter(prefix="/api/traffic", tags=["traffic"])
 
@@ -55,6 +56,24 @@ def analyze(payload: TrafficAnalyzeRequest, db: Session = Depends(get_db)):
     db.add(event)
     db.commit()
     db.refresh(event)
+
+    manager.broadcast_threadsafe({
+        "type": "traffic_event",
+        "payload": {
+            "id": event.id,
+            "event_type": event.event_type,
+            "ip_address": event.ip_address,
+            "device_id": event.device_id,
+            "user_agent": event.user_agent,
+            "request_count": event.request_count,
+            "risk_score": event.risk_score,
+            "risk_level": event.risk_level,
+            "risk_reasons": event.risk_reasons,
+            "action_taken": event.action_taken,
+            "created_at": event.created_at.isoformat() if event.created_at else None,
+            "source": "manual",
+        },
+    })
 
     return TrafficAnalyzeResponse(
         success=(level == "Low"),
@@ -111,12 +130,20 @@ def start_simulator(payload: SimulatorStartRequest):
         rate_per_sec=payload.rate_per_sec or 2.0,
         distribution=payload.distribution or "mixed",
     )
+    manager.broadcast_threadsafe({
+        "type": "simulator",
+        "payload": simulator.status(),
+    })
     return {"success": True, "started": started, "status": simulator.status()}
 
 
 @router.post("/simulator/stop")
 def stop_simulator():
     stopped = simulator.stop()
+    manager.broadcast_threadsafe({
+        "type": "simulator",
+        "payload": simulator.status(),
+    })
     return {"success": True, "stopped": stopped, "status": simulator.status()}
 
 

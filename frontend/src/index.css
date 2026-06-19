@@ -894,3 +894,215 @@ a:hover { text-decoration: underline; }
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.32); background-clip: padding-box; }
+
+
+/* ===========================================================
+   v1.2 additions: notifications, ws status, formik fields
+   =========================================================== */
+
+/* WebSocket connection pill */
+.ws-pill {
+  display: inline-block;
+  margin-left: 12px;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ws-pill.ws-on {
+  background: rgba(22, 163, 74, 0.15);
+  color: #14532d;
+}
+.ws-pill.ws-off {
+  background: rgba(148, 163, 184, 0.25);
+  color: #475569;
+}
+
+/* Notification bell */
+.bell-wrap { position: relative; }
+.bell-btn {
+  position: relative;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--glass-border-soft);
+  border-radius: var(--radius-pill);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease, transform 0.05s ease;
+}
+.bell-btn:hover { background: #fff; }
+.bell-icon { line-height: 1; }
+.bell-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.bell-dot-live {
+  background: #16a34a;
+  box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.5);
+  animation: live-pulse 1.6s infinite;
+}
+.bell-dot-off { background: #cbd5e1; }
+.bell-count {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: linear-gradient(135deg, #ef4444, #f43f5e);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  min-width: 18px;
+  text-align: center;
+}
+
+.bell-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 360px;
+  max-height: 460px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  z-index: 30;
+}
+.bell-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.bell-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.bell-empty {
+  padding: 28px 16px;
+  text-align: center;
+}
+.bell-item {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bell-item:last-child { border-bottom: none; }
+.bell-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.bell-item-type {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 700;
+}
+.bell-item-msg {
+  font-size: 13px;
+  font-weight: 500;
+}
+.bell-item-meta { font-size: 11px; }
+
+/* Toast */
+.toast-stack {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  width: 360px;
+  max-width: calc(100vw - 48px);
+  padding: 12px 14px;
+  border-left: 4px solid var(--primary);
+  animation: toast-in 0.25s ease;
+}
+.toast-low      { border-left-color: var(--low); }
+.toast-medium   { border-left-color: var(--medium); }
+.toast-high     { border-left-color: var(--high); }
+.toast-critical { border-left-color: var(--critical); }
+.toast-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.toast-title { font-weight: 700; font-size: 13px; flex: 1; }
+.toast-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 4px;
+}
+.toast-message { font-size: 13px; line-height: 1.4; }
+
+@keyframes toast-in {
+  from { transform: translateX(20px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+/* Formik field shape - matches existing form-grid layout */
+.formik-field {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.formik-field input {
+  margin-top: 4px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--text);
+  font-size: 14px;
+  text-transform: none;
+  font-weight: 400;
+  letter-spacing: normal;
+  transition: border 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  font-family: inherit;
+}
+.formik-field input:focus {
+  outline: none;
+  border-color: rgba(91, 108, 255, 0.55);
+  box-shadow: 0 0 0 4px rgba(91, 108, 255, 0.18);
+  background: #fff;
+}
+.field-error {
+  margin-top: 4px;
+  color: #b91c1c;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.auth-note {
+  margin-bottom: 10px;
+  text-align: center;
+}

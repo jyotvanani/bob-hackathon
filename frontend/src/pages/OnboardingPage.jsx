@@ -1,14 +1,84 @@
 import React, { useEffect, useState } from 'react';
+import { Formik, Form, Field, ErrorMessage } from 'formik';
+import * as Yup from 'yup';
 import {
   applyOnboarding,
   getOnboardingApplications
 } from '../api/onboardingApi';
+import { useRealtimeEvent } from '../realtime/RealtimeContext.jsx';
 import RiskBadge from '../components/RiskBadge.jsx';
 import RiskScoreCard from '../components/RiskScoreCard.jsx';
 import Loader from '../components/Loader.jsx';
 import { formatDate } from '../utils/formatDate';
 
-const presets = {
+// ----- Validation schema -----
+const validationSchema = Yup.object({
+  full_name: Yup.string()
+    .trim()
+    .min(3, 'Name is too short')
+    .max(80, 'Name is too long')
+    .required('Full name is required'),
+  email: Yup.string()
+    .trim()
+    .email('Enter a valid email')
+    .required('Email is required'),
+  phone: Yup.string()
+    .matches(/^[0-9]{10}$/, 'Phone must be exactly 10 digits')
+    .required('Phone is required'),
+  dob: Yup.date()
+    .max(new Date(), 'Date of birth cannot be in the future')
+    .required('Date of birth is required'),
+  city: Yup.string().trim().required('City is required'),
+  country: Yup.string().trim().required('Country is required'),
+  device_id: Yup.string().trim().required('Device ID is required'),
+  ip_address: Yup.string()
+    .matches(
+      /^(\d{1,3}\.){3}\d{1,3}$/,
+      'Enter a valid IPv4 address (e.g. 192.168.1.50)'
+    )
+    .required('IP address is required'),
+  document_id: Yup.string()
+    .trim()
+    .matches(/^[A-Z0-9_-]+$/i, 'Use letters, digits, hyphen or underscore only')
+    .required('Document ID is required'),
+  document_match_score: Yup.number()
+    .typeError('Must be a number')
+    .min(0, 'Min 0')
+    .max(100, 'Max 100')
+    .required('Required'),
+  selfie_match_score: Yup.number()
+    .typeError('Must be a number')
+    .min(0, 'Min 0')
+    .max(100, 'Max 100')
+    .required('Required'),
+  form_completion_seconds: Yup.number()
+    .typeError('Must be a number')
+    .integer('Must be an integer')
+    .min(0, 'Min 0')
+    .required('Required'),
+  otp_attempts: Yup.number()
+    .typeError('Must be a number')
+    .integer('Must be an integer')
+    .min(0, 'Min 0')
+    .required('Required')
+});
+
+// ----- Preset templates -----
+// We tag each preset's identifying fields with a fresh suffix so that
+// repeatedly clicking a preset does NOT accumulate duplicate-detection
+// penalties (which were forcing every submission to look like fraud).
+function uniquify(base) {
+  const tail = `${Date.now()}`.slice(-6);
+  return {
+    ...base,
+    email: base.email.replace('@', `_${tail}@`),
+    phone: `${base.phone.slice(0, 4)}${tail.slice(-6)}`.padEnd(10, '0').slice(0, 10),
+    document_id: `${base.document_id}_${tail}`,
+    device_id: base.device_id_unique ? `${base.device_id}_${tail}` : base.device_id
+  };
+}
+
+const basePresets = {
   normal: {
     full_name: 'Rahul Patel',
     email: 'rahul@example.com',
@@ -17,6 +87,7 @@ const presets = {
     city: 'Surat',
     country: 'India',
     device_id: 'android_new_101',
+    device_id_unique: true,
     ip_address: '192.168.1.50',
     document_id: 'DOC1001',
     document_match_score: 92,
@@ -32,6 +103,7 @@ const presets = {
     city: 'Delhi',
     country: 'India',
     device_id: 'bot_device_999',
+    device_id_unique: false,
     ip_address: '45.99.88.77',
     document_id: 'DOC9999',
     document_match_score: 45,
@@ -47,6 +119,7 @@ const presets = {
     city: 'Unknown',
     country: 'Russia',
     device_id: 'bot_device_999',
+    device_id_unique: false,
     ip_address: '45.99.88.77',
     document_id: 'DOC9999',
     document_match_score: 25,
@@ -56,15 +129,17 @@ const presets = {
   }
 };
 
-const initial = { ...presets.normal };
+const initial = (() => {
+  const { device_id_unique, ...rest } = uniquify(basePresets.normal);
+  return rest;
+})();
 
 export default function OnboardingPage() {
-  const [form, setForm] = useState(initial);
-  const [result, setResult] = useState(null);
   const [applications, setApplications] = useState([]);
+  const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [formValues, setFormValues] = useState(initial);
 
   async function load() {
     setLoading(true);
@@ -83,30 +158,29 @@ export default function OnboardingPage() {
     load();
   }, []);
 
-  function applyPreset(key) {
-    setForm({ ...presets[key] });
+  // Refresh table when a new onboarding application is broadcast
+  useRealtimeEvent('onboarding', () => {
+    load();
+  });
+
+  function applyPreset(key, setValues) {
+    const { device_id_unique, ...rest } = uniquify(basePresets[key]);
+    setFormValues(rest);
+    setValues(rest);
     setResult(null);
   }
 
-  function handleChange(e) {
-    const { name, value } = e.target;
-    setForm({ ...form, [name]: value });
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function handleSubmit(values, { setSubmitting }) {
     setError('');
     setResult(null);
-    setSubmitting(true);
     try {
-      const payload = {
-        ...form,
-        document_match_score: Number(form.document_match_score) || 0,
-        selfie_match_score: Number(form.selfie_match_score) || 0,
-        form_completion_seconds: Number(form.form_completion_seconds) || 0,
-        otp_attempts: Number(form.otp_attempts) || 0
-      };
-      const data = await applyOnboarding(payload);
+      const data = await applyOnboarding({
+        ...values,
+        document_match_score: Number(values.document_match_score),
+        selfie_match_score: Number(values.selfie_match_score),
+        form_completion_seconds: Number(values.form_completion_seconds),
+        otp_attempts: Number(values.otp_attempts)
+      });
       setResult(data);
       load();
     } catch (err) {
@@ -127,91 +201,94 @@ export default function OnboardingPage() {
       </div>
 
       <div className="grid-2">
-        <div className="card">
-          <div className="preset-row">
-            <button type="button" className="btn btn-light" onClick={() => applyPreset('normal')}>
-              Normal Onboarding
-            </button>
-            <button type="button" className="btn btn-light" onClick={() => applyPreset('suspicious')}>
-              Suspicious Onboarding
-            </button>
-            <button type="button" className="btn btn-light" onClick={() => applyPreset('critical')}>
-              Critical Onboarding
-            </button>
-          </div>
+        <div className="card glass">
+          <Formik
+            initialValues={formValues}
+            enableReinitialize
+            validationSchema={validationSchema}
+            onSubmit={handleSubmit}
+          >
+            {({ setValues, isSubmitting, errors, touched }) => (
+              <Form noValidate>
+                <div className="preset-row">
+                  <button
+                    type="button"
+                    className="btn btn-light"
+                    onClick={() => applyPreset('normal', setValues)}
+                  >
+                    Normal Onboarding
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-light"
+                    onClick={() => applyPreset('suspicious', setValues)}
+                  >
+                    Suspicious Onboarding
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-light"
+                    onClick={() => applyPreset('critical', setValues)}
+                  >
+                    Critical Onboarding
+                  </button>
+                </div>
 
-          <form onSubmit={handleSubmit} className="form-grid">
-            <label>Full Name
-              <input name="full_name" value={form.full_name} onChange={handleChange} required />
-            </label>
-            <label>Email
-              <input name="email" value={form.email} onChange={handleChange} required />
-            </label>
-            <label>Phone
-              <input name="phone" value={form.phone} onChange={handleChange} required />
-            </label>
-            <label>DOB
-              <input name="dob" type="date" value={form.dob} onChange={handleChange} />
-            </label>
-            <label>City
-              <input name="city" value={form.city} onChange={handleChange} />
-            </label>
-            <label>Country
-              <input name="country" value={form.country} onChange={handleChange} />
-            </label>
-            <label>Device ID
-              <input name="device_id" value={form.device_id} onChange={handleChange} />
-            </label>
-            <label>IP Address
-              <input name="ip_address" value={form.ip_address} onChange={handleChange} />
-            </label>
-            <label>Document ID
-              <input name="document_id" value={form.document_id} onChange={handleChange} />
-            </label>
-            <label>Document Match Score
-              <input
-                name="document_match_score"
-                type="number"
-                min="0"
-                max="100"
-                value={form.document_match_score}
-                onChange={handleChange}
-              />
-            </label>
-            <label>Selfie Match Score
-              <input
-                name="selfie_match_score"
-                type="number"
-                min="0"
-                max="100"
-                value={form.selfie_match_score}
-                onChange={handleChange}
-              />
-            </label>
-            <label>Form Completion Seconds
-              <input
-                name="form_completion_seconds"
-                type="number"
-                min="0"
-                value={form.form_completion_seconds}
-                onChange={handleChange}
-              />
-            </label>
-            <label>OTP Attempts
-              <input
-                name="otp_attempts"
-                type="number"
-                min="0"
-                value={form.otp_attempts}
-                onChange={handleChange}
-              />
-            </label>
-            <div className="form-actions">
-              <button className="btn btn-primary" type="submit" disabled={submitting}>
-                {submitting ? 'Analyzing...' : 'Analyze Onboarding'}
-              </button>
-            </div>
-          </form>
+                <div className="form-grid">
+                  <FormikField name="full_name" label="Full Name" />
+                  <FormikField name="email" label="Email" type="email" />
+                  <FormikField name="phone" label="Phone" />
+                  <FormikField name="dob" label="DOB" type="date" />
+                  <FormikField name="city" label="City" />
+                  <FormikField name="country" label="Country" />
+                  <FormikField name="device_id" label="Device ID" />
+                  <FormikField name="ip_address" label="IP Address" />
+                  <FormikField name="document_id" label="Document ID" />
+                  <FormikField
+                    name="document_match_score"
+                    label="Document Match Score"
+                    type="number"
+                    min="0"
+                    max="100"
+                  />
+                  <FormikField
+                    name="selfie_match_score"
+                    label="Selfie Match Score"
+                    type="number"
+                    min="0"
+                    max="100"
+                  />
+                  <FormikField
+                    name="form_completion_seconds"
+                    label="Form Completion Seconds"
+                    type="number"
+                    min="0"
+                  />
+                  <FormikField
+                    name="otp_attempts"
+                    label="OTP Attempts"
+                    type="number"
+                    min="0"
+                  />
+                  <div className="form-actions">
+                    <button
+                      type="submit"
+                      className="btn btn-primary"
+                      disabled={isSubmitting}
+                    >
+                      {isSubmitting ? 'Analyzing...' : 'Analyze Onboarding'}
+                    </button>
+                  </div>
+                </div>
+
+                {Object.keys(errors).length > 0 && Object.keys(touched).length > 0 && (
+                  <div className="auth-error" style={{ marginTop: 10 }}>
+                    Please fix the highlighted fields.
+                  </div>
+                )}
+              </Form>
+            )}
+          </Formik>
           {error && <div className="error-banner">{error}</div>}
         </div>
 
@@ -224,14 +301,14 @@ export default function OnboardingPage() {
               recommendedAction={result.decision}
             />
           ) : (
-            <div className="card placeholder-card">
+            <div className="card glass placeholder-card">
               <div className="muted">Submit an application to see the engine result.</div>
             </div>
           )}
         </div>
       </div>
 
-      <div className="card">
+      <div className="card glass">
         <div className="card-title">Onboarding Applications</div>
         {loading ? (
           <Loader />
@@ -277,5 +354,16 @@ export default function OnboardingPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// ---------- Reusable Formik field ----------
+function FormikField({ name, label, type = 'text', ...rest }) {
+  return (
+    <label className="formik-field">
+      <span>{label}</span>
+      <Field name={name} type={type} {...rest} />
+      <ErrorMessage name={name} component="small" className="field-error" />
+    </label>
   );
 }

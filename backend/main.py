@@ -1,10 +1,13 @@
 """AccountGuard AI - FastAPI entry point."""
+import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.init_db import init_database
+from app.websocket import manager
 from app.routes import (
     auth_routes,
     risk_routes,
@@ -20,13 +23,14 @@ from app.routes import (
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_database()
+    manager.set_loop(asyncio.get_event_loop())
     yield
 
 
 app = FastAPI(
     title="AccountGuard AI",
     description="AI-Based Account Takeover Detection System",
-    version="1.0.0",
+    version="1.2.0",
     lifespan=lifespan,
 )
 
@@ -47,6 +51,28 @@ def root():
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "AccountGuard AI"}
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    """Single broadcast channel.
+
+    Server pushes JSON messages of shape:
+      { "type": "traffic_event" | "alert" | "login" | "transaction" | "case"
+              | "onboarding" | "simulator", "payload": {...} }
+    The client can send "ping" to keep the connection alive; everything else
+    is ignored.
+    """
+    await manager.connect(websocket)
+    try:
+        await manager.broadcast({"type": "hello", "payload": {"connected": True}})
+        while True:
+            # Keep connection open; ignore anything the client sends.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await manager.disconnect(websocket)
+    except Exception:
+        await manager.disconnect(websocket)
 
 
 # Register routers

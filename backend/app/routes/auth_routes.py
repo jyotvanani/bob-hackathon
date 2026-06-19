@@ -18,7 +18,6 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     phone: Optional[str] = None
-    role: Optional[str] = "customer"
     usual_city: Optional[str] = "Surat"
     usual_country: Optional[str] = "India"
 
@@ -28,13 +27,13 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == payload.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    role = payload.role if payload.role in ("customer", "admin") else "customer"
+    # Public signup is restricted to customer accounts only.
     user = User(
         name=payload.name,
         email=payload.email,
         password=payload.password,
         phone=payload.phone,
-        role=role,
+        role="customer",
         usual_city=payload.usual_city or "Surat",
         usual_country=payload.usual_country or "India",
         usual_login_start_hour=8,

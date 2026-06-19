@@ -9,7 +9,6 @@ export default function AuthPage() {
   const { signIn } = useAuth();
 
   const [mode, setMode] = useState('signin'); // signin | signup
-  const [role, setRole] = useState('customer'); // visual hint, source of truth is DB
   const [form, setForm] = useState({ name: '', email: '', password: '', phone: '' });
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
@@ -23,18 +22,19 @@ export default function AuthPage() {
 
   function fillDemo(kind) {
     if (kind === 'admin') {
-      setRole('admin');
       setForm({ ...form, email: 'admin@example.com', password: 'admin123' });
     } else {
-      setRole('customer');
       setForm({ ...form, email: 'jyot@example.com', password: '123456' });
     }
+    setMode('signin');
+    setError('');
+    setInfo('');
   }
 
   function routeAfterLogin(user) {
     const target = user.role === 'admin' ? '/dashboard' : '/home';
     const fromPath = location?.state?.from?.pathname;
-    navigate(fromPath || target, { replace: true });
+    navigate(fromPath && fromPath !== '/' ? fromPath : target, { replace: true });
   }
 
   async function handleSignIn(e) {
@@ -44,7 +44,7 @@ export default function AuthPage() {
     setLoading(true);
     try {
       const data = await login({
-        email: form.email,
+        email: form.email.trim(),
         password: form.password,
         device_id: 'web_session',
         device_name: 'Web Browser',
@@ -58,10 +58,6 @@ export default function AuthPage() {
 
       if (!data.user) {
         setError('Invalid email or password');
-        return;
-      }
-      if (role && data.user.role !== role) {
-        setError(`This account is registered as ${data.user.role}, not ${role}.`);
         return;
       }
       if (data.risk_level === 'Critical' || data.risk_level === 'High') {
@@ -88,14 +84,17 @@ export default function AuthPage() {
       setError('Name, email and password are required');
       return;
     }
+    if (form.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
     setLoading(true);
     try {
       const data = await register({
-        name: form.name,
-        email: form.email,
+        name: form.name.trim(),
+        email: form.email.trim(),
         password: form.password,
-        phone: form.phone,
-        role
+        phone: form.phone
       });
       if (!data.success) {
         setError(data.message || 'Registration failed');
@@ -147,26 +146,17 @@ export default function AuthPage() {
           </button>
         </div>
 
-        <div className="role-pills">
-          <button
-            type="button"
-            className={`role-pill ${role === 'customer' ? 'active' : ''}`}
-            onClick={() => setRole('customer')}
-          >
-            👤 Customer
-          </button>
-          <button
-            type="button"
-            className={`role-pill ${role === 'admin' ? 'active' : ''}`}
-            onClick={() => setRole('admin')}
-          >
-            🛡️ Admin
-          </button>
-        </div>
+        {!isSignIn && (
+          <div className="auth-note muted small">
+            Public sign-up creates a <strong>customer</strong> account. Admin
+            access is invite-only.
+          </div>
+        )}
 
         <form
           onSubmit={isSignIn ? handleSignIn : handleSignUp}
           className="auth-form"
+          noValidate
         >
           {!isSignIn && (
             <label className="auth-field">
@@ -214,7 +204,7 @@ export default function AuthPage() {
                 name="phone"
                 value={form.phone}
                 onChange={handleChange}
-                placeholder="9876543210"
+                placeholder="0"
                 autoComplete="tel"
               />
             </label>
@@ -224,11 +214,7 @@ export default function AuthPage() {
           {info && <div className="auth-info">{info}</div>}
 
           <button className="btn btn-primary auth-submit" type="submit" disabled={loading}>
-            {loading
-              ? 'Working...'
-              : isSignIn
-                ? `Sign in as ${role === 'admin' ? 'Admin' : 'Customer'}`
-                : 'Create account'}
+            {loading ? 'Working...' : isSignIn ? 'Sign in' : 'Create account'}
           </button>
         </form>
 

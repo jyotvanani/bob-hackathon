@@ -12,6 +12,7 @@ from app.schemas.onboarding_schema import (
     OnboardingUpdateRequest,
 )
 from app.services.onboarding_service import calculate_onboarding_risk
+from app.websocket import manager
 
 router = APIRouter(prefix="/api/onboarding", tags=["onboarding"])
 
@@ -57,6 +58,23 @@ def apply(payload: OnboardingCreate, db: Session = Depends(get_db)):
     db.add(application)
     db.commit()
     db.refresh(application)
+
+    manager.broadcast_threadsafe({
+        "type": "onboarding",
+        "payload": {
+            "id": application.id,
+            "full_name": application.full_name,
+            "email": application.email,
+            "phone": application.phone,
+            "city": application.city,
+            "country": application.country,
+            "document_id": application.document_id,
+            "risk_score": application.risk_score,
+            "risk_level": application.risk_level,
+            "decision": application.decision,
+            "created_at": application.created_at.isoformat() if application.created_at else None,
+        },
+    })
 
     return OnboardingCreateResponse(
         success=(level == "Low"),

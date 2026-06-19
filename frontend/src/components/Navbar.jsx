@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
+import NotificationBell from './NotificationBell.jsx';
 
 export default function Navbar() {
   const { user, signOut } = useAuth();
@@ -22,6 +23,7 @@ export default function Navbar() {
       </div>
 
       <div className="navbar-right">
+        {user && <NotificationBell />}
         {user && (
           <>
             <div className="user-chip">

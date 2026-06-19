@@ -205,6 +205,7 @@ class TrafficSimulator:
             pass
 
     def _emit_one(self) -> None:
+        from app.websocket import manager  # local import to avoid cycles
         template = _build_template(self._distribution)
         db = SessionLocal()
         try:
@@ -235,7 +236,27 @@ class TrafficSimulator:
             )
             db.add(event)
             db.commit()
+            db.refresh(event)
             self._events_generated += 1
+
+            # Broadcast to WS clients
+            manager.broadcast_threadsafe({
+                "type": "traffic_event",
+                "payload": {
+                    "id": event.id,
+                    "event_type": event.event_type,
+                    "ip_address": event.ip_address,
+                    "device_id": event.device_id,
+                    "user_agent": event.user_agent,
+                    "request_count": event.request_count,
+                    "risk_score": event.risk_score,
+                    "risk_level": event.risk_level,
+                    "risk_reasons": event.risk_reasons,
+                    "action_taken": event.action_taken,
+                    "created_at": event.created_at.isoformat() if event.created_at else None,
+                    "source": "simulator",
+                },
+            })
         except Exception:
             db.rollback()
         finally:

@@ -7,6 +7,7 @@ import {
 } from '../api/dashboardApi';
 import { getAlerts } from '../api/alertApi';
 import { getSimulatorStatus } from '../api/trafficApi';
+import { useRealtime } from '../realtime/RealtimeContext.jsx';
 import StatCard from '../components/StatCard.jsx';
 import AlertCard from '../components/AlertCard.jsx';
 import Loader from '../components/Loader.jsx';
@@ -14,7 +15,8 @@ import RiskDistributionChart from '../charts/RiskDistributionChart.jsx';
 import FraudReasonChart from '../charts/FraudReasonChart.jsx';
 import LoginTrendChart from '../charts/LoginTrendChart.jsx';
 
-const POLL_MS = 2000;
+// Debounce dashboard refreshes so a flood of WS events doesn't hammer the API.
+const REFRESH_DEBOUNCE_MS = 600;
 
 export default function AdminDashboard() {
   const [summary, setSummary] = useState(null);
@@ -27,6 +29,9 @@ export default function AdminDashboard() {
   const [error, setError] = useState('');
   const [pulse, setPulse] = useState(0);
   const lastTrafficRef = useRef(0);
+  const refreshTimerRef = useRef(null);
+
+  const { connected, subscribe } = useRealtime();
 
   async function load() {
     try {
@@ -55,15 +60,43 @@ export default function AdminDashboard() {
     }
   }
 
-  useEffect(() => {
-    load();
-  }, []);
+  function scheduleRefresh() {
+    if (refreshTimerRef.current) return;
+    refreshTimerRef.current = window.setTimeout(() => {
+      refreshTimerRef.current = null;
+      load();
+    }, REFRESH_DEBOUNCE_MS);
+  }
 
   useEffect(() => {
-    if (!simStatus.running) return undefined;
-    const id = setInterval(load, POLL_MS);
-    return () => clearInterval(id);
-  }, [simStatus.running]);
+    load();
+    return () => {
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+    };
+  }, []);
+
+  // Real-time subscriptions
+  useEffect(() => {
+    return subscribe((msg) => {
+      if (!msg) return;
+      switch (msg.type) {
+        case 'simulator':
+          setSimStatus(msg.payload || { running: false });
+          break;
+        case 'traffic_event':
+        case 'login':
+        case 'transaction':
+        case 'onboarding':
+        case 'alert':
+        case 'case':
+          scheduleRefresh();
+          break;
+        default:
+          break;
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subscribe]);
 
   if (loading && !summary) return <div className="page"><Loader /></div>;
 
@@ -72,7 +105,12 @@ export default function AdminDashboard() {
       <div className="page-header row-between" style={{ flexWrap: 'wrap', gap: 12 }}>
         <div>
           <h2>Admin Dashboard</h2>
-          <p className="muted">Live overview of authentication, transactions, onboarding and traffic.</p>
+          <p className="muted">
+            Live overview of authentication, transactions, onboarding and traffic.
+            <span className={`ws-pill ${connected ? 'ws-on' : 'ws-off'}`}>
+              {connected ? 'WebSocket: live' : 'WebSocket: offline'}
+            </span>
+          </p>
         </div>
         {simStatus.running && (
           <span className="live-pill" key={pulse}>

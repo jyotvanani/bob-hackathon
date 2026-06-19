@@ -12,6 +12,8 @@ from app.routes import (
     dashboard_routes,
     alert_routes,
     case_routes,
+    onboarding_routes,
+    traffic_routes,
 )
 
 
@@ -54,3 +56,5 @@ app.include_router(transaction_routes.router)
 app.include_router(dashboard_routes.router)
 app.include_router(alert_routes.router)
 app.include_router(case_routes.router)
+app.include_router(onboarding_routes.router)
+app.include_router(traffic_routes.router)

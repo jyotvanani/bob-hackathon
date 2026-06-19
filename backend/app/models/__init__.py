@@ -5,6 +5,8 @@ from app.models.login_model import LoginEvent
 from app.models.transaction_model import Transaction
 from app.models.alert_model import Alert
 from app.models.case_model import FraudCase
+from app.models.onboarding_model import OnboardingApplication
+from app.models.traffic_model import TrafficEvent
 
 __all__ = [
     "User",
@@ -13,4 +15,6 @@ __all__ = [
     "Transaction",
     "Alert",
     "FraudCase",
+    "OnboardingApplication",
+    "TrafficEvent",
 ]

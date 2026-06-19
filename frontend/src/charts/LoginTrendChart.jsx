@@ -23,6 +23,7 @@ export default function LoginTrendChart({ data = [] }) {
         <Tooltip />
         <Legend />
         <Line type="monotone" dataKey="logins" stroke="#2563eb" strokeWidth={2} />
+        <Line type="monotone" dataKey="traffic" stroke="#8b5cf6" strokeWidth={2} />
         <Line type="monotone" dataKey="suspicious" stroke="#ef4444" strokeWidth={2} />
       </LineChart>
     </ResponsiveContainer>

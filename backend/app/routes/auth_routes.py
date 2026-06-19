@@ -1,5 +1,7 @@
 """Authentication routes."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -9,6 +11,44 @@ from app.schemas.auth_schema import LoginRequest, LoginResponse, UserOut
 from app.services import risk_service, alert_service, case_service, device_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+    phone: Optional[str] = None
+    role: Optional[str] = "customer"
+    usual_city: Optional[str] = "Surat"
+    usual_country: Optional[str] = "India"
+
+
+@router.post("/register")
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.email == payload.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    role = payload.role if payload.role in ("customer", "admin") else "customer"
+    user = User(
+        name=payload.name,
+        email=payload.email,
+        password=payload.password,
+        phone=payload.phone,
+        role=role,
+        usual_city=payload.usual_city or "Surat",
+        usual_country=payload.usual_country or "India",
+        usual_login_start_hour=8,
+        usual_login_end_hour=22,
+        average_transaction_amount=5000.0,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {
+        "success": True,
+        "message": "Registration successful",
+        "user": {"id": user.id, "name": user.name, "email": user.email, "role": user.role},
+    }
 
 
 @router.post("/login", response_model=LoginResponse)

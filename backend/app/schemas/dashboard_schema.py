@@ -10,6 +10,10 @@ class DashboardSummary(BaseModel):
     total_alerts: int
     high_risk_logins: int
     open_cases: int
+    total_onboarding_applications: int = 0
+    high_risk_onboarding_applications: int = 0
+    total_traffic_events: int = 0
+    critical_traffic_events: int = 0
 
 
 class RiskDistributionItem(BaseModel):
@@ -26,3 +30,4 @@ class LoginTrendItem(BaseModel):
     date: str
     logins: int
     suspicious: int
+    traffic: int = 0

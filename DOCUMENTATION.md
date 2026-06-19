@@ -1,8 +1,9 @@
-# AccountGuard AI - Full Documentation
+# AccountGuard AI - Full Documentation (v1.1)
 
 AI-Based Account Takeover Detection System. Hackathon prototype that detects
-suspicious bank login and transaction activity using an explainable rule-based
-risk engine, with a clean React dashboard and a FastAPI backend on SQLite.
+suspicious bank login and transaction activity, blocks fake user traffic, and
+catches onboarding fraud. Real-time traffic simulator + role-based auth +
+Liquid Glass UI.
 
 ---
 
@@ -13,61 +14,60 @@ risk engine, with a clean React dashboard and a FastAPI backend on SQLite.
 3. [Tech Stack](#3-tech-stack)
 4. [Folder Structure](#4-folder-structure)
 5. [Architecture](#5-architecture)
-6. [Risk Scoring Engine](#6-risk-scoring-engine)
-7. [Database Schema](#7-database-schema)
-8. [API Reference](#8-api-reference)
-9. [Frontend Pages and Components](#9-frontend-pages-and-components)
-10. [Setup and Run](#10-setup-and-run)
-11. [Demo Scenarios](#11-demo-scenarios)
-12. [Testing](#12-testing)
-13. [Security and Data Notes](#13-security-and-data-notes)
-14. [Troubleshooting](#14-troubleshooting)
-15. [Future Scope](#15-future-scope)
+6. [Risk Engines](#6-risk-engines)
+   - 6.1 Login Risk
+   - 6.2 Transaction Risk
+   - 6.3 Onboarding (KYC) Risk
+   - 6.4 Fake Traffic Risk
+7. [Real-Time Traffic Simulator](#7-real-time-traffic-simulator)
+8. [Authentication and Roles](#8-authentication-and-roles)
+9. [Database Schema](#9-database-schema)
+10. [API Reference](#10-api-reference)
+11. [Frontend Pages and Components](#11-frontend-pages-and-components)
+12. [UI Theme - Liquid Glass](#12-ui-theme---liquid-glass)
+13. [Setup and Run](#13-setup-and-run)
+14. [Demo Scenarios](#14-demo-scenarios)
+15. [Testing](#15-testing)
+16. [Security and Data Notes](#16-security-and-data-notes)
+17. [Troubleshooting](#17-troubleshooting)
+18. [Future Scope](#18-future-scope)
 
 ---
 
 ## 1. Problem Statement
 
 Account Takeover (ATO) attacks are one of the largest sources of online banking
-fraud. An attacker who steals a customer's credentials can:
+fraud. An attacker who steals a customer's credentials can log in from a brand
+new device, in an unusual geography, at odd hours, and quickly move funds to a
+new beneficiary. Adjacent threats include synthetic / fake KYC onboarding and
+automated bot traffic (credential stuffing, mass account creation, scraping).
 
-- Log in from a brand new device.
-- Connect from an unusual city or country.
-- Attempt logins at odd hours (12 AM - 5 AM).
-- Make repeated failed attempts (credential stuffing).
-- Move money to a new beneficiary in large amounts.
+Static rules generate too many false positives and are easy for attackers to
+evade. Manual fraud queues cannot keep up with the volume of digital activity.
 
-Static rules ("block country X", "allow IP range Y") generate too many false
-positives and are easy for attackers to evade. Manual fraud review queues cannot
-keep up with the volume of digital transactions.
-
-AccountGuard AI demonstrates a practical, explainable risk engine that scores
-each login and transaction against multiple behavioural signals, returns a
-plain-English explanation, and recommends a concrete action.
+AccountGuard AI demonstrates four explainable risk engines and a real-time
+traffic simulator that shows how a security operations dashboard reacts to a
+live attack wave.
 
 ## 2. Solution Overview
 
-The system has three layers:
+Four rule-based risk engines:
 
-1. **Risk engine** - pure functions over the request and the customer profile.
-   Produces `risk_score` (0-100), `risk_level` (Low / Medium / High / Critical),
-   `risk_reasons[]`, and `recommended_action`.
-2. **Backend API** - FastAPI with SQLAlchemy + SQLite. Persists login events,
-   transactions, devices, alerts and fraud cases. Auto-creates Medium+ alerts
-   and High/Critical fraud cases.
-3. **Admin dashboard** - React + Vite app with charts (Recharts) and workflow
-   pages for Alerts and Cases.
+- **Login risk** - new device, unusual city / country, night-time, failed
+  attempts, suspicious IP.
+- **Transaction risk** - high amount vs the customer's average, new
+  beneficiary, unusual location and time.
+- **Onboarding (KYC) risk** - duplicate identity, low document / selfie
+  scores, age, country, fast form completion, OTP brute-force.
+- **Fake traffic risk** - request frequency, repeated IP / device, suspicious
+  user-agent, credential-stuffing patterns.
 
-Key features:
+A traffic simulator background thread streams synthetic events into the engine.
+The admin dashboard polls every 2 seconds while the simulator is running, so
+all charts and stat cards update in real time.
 
-- Customer login simulation with risk analysis.
-- New device, new location, night-time, failed attempt, suspicious IP signals.
-- Transaction risk: amount, new beneficiary, location, time.
-- Recommended action per risk level (allow / step-up / block / freeze).
-- Auto-generated alerts and fraud cases.
-- Admin dashboard with totals and charts.
-- Demo seed data so the dashboard works on first run.
-- Synthetic data only.
+A simple role-based auth layer routes Customers to a private home page and
+Admins to the full security console.
 
 ## 3. Tech Stack
 
@@ -83,95 +83,105 @@ Key features:
 
 ```
 accountguard-ai/
-├── README.md                Quick start
-├── DOCUMENTATION.md         This file (full reference)
+├── README.md, DOCUMENTATION.md
 ├── .gitignore, .env.example
 │
 ├── backend/
-│   ├── requirements.txt
-│   ├── main.py              FastAPI entry, lifespan, CORS, routers
+│   ├── requirements.txt, main.py
 │   └── app/
-│       ├── config.py        env-driven settings
-│       ├── database.py      engine, SessionLocal, Base
-│       ├── init_db.py       create_all + seed-on-empty
-│       ├── models/          ORM: user, device, login, transaction, alert, case
-│       ├── schemas/         Pydantic request/response models
-│       ├── routes/          auth, risk, transactions, dashboard, alerts, cases
-│       ├── services/        risk engine, device, location, alert, case, txn helpers
+│       ├── config.py, database.py, init_db.py
+│       ├── models/      user, device, login_event, transaction,
+│       │                alert, fraud_case, onboarding_application,
+│       │                traffic_event
+│       ├── schemas/     Pydantic request / response models
+│       ├── routes/      auth, risk, transactions, dashboard, alerts,
+│       │                cases, onboarding, traffic
+│       ├── services/    risk_service, onboarding_service,
+│       │                traffic_service, traffic_simulator,
+│       │                device_service, location_service,
+│       │                alert_service, case_service, transaction_service
 │       ├── seed/seed_data.py
-│       └── utils/           response + time helpers
+│       └── utils/       response, time helpers
 │
 ├── frontend/
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── index.html
+│   ├── package.json, vite.config.js, index.html
 │   └── src/
 │       ├── main.jsx, App.jsx, index.css
-│       ├── api/             apiClient + 6 domain wrappers
-│       ├── components/      Navbar, Sidebar, Layout, RiskBadge, RiskScoreCard, StatCard, AlertCard, Loader
-│       ├── pages/           LoginPage, AdminDashboard, RiskAnalysisPage, TransactionsPage, AlertsPage, CasesPage, NotFoundPage
-│       ├── charts/          RiskDistributionChart, FraudReasonChart, LoginTrendChart
+│       ├── api/         apiClient + 8 domain wrappers
+│       ├── auth/        AuthContext, RequireAuth
+│       ├── components/  Navbar, Sidebar, Layout, RiskBadge,
+│       │                RiskScoreCard, StatCard, AlertCard, Loader
+│       ├── pages/       AuthPage, UserHomePage, LoginPage,
+│       │                AdminDashboard, RiskAnalysisPage,
+│       │                TransactionsPage, AlertsPage, CasesPage,
+│       │                OnboardingPage, TrafficMonitorPage,
+│       │                NotFoundPage
+│       ├── charts/      RiskDistribution, FraudReason, LoginTrend
 │       ├── routes/AppRoutes.jsx
-│       └── utils/           constants, formatDate, riskUtils
+│       └── utils/       constants, formatDate, riskUtils
 │
-├── database/
-│   ├── schema.sql           Reference DDL
-│   └── sample_data.sql      Reference inserts
-│
-├── docs/
-│   ├── problem_statement.md
-│   ├── project_architecture.md
-│   └── api_documentation.md
-│
-└── tests/
-    ├── test_risk_score.py
-    └── test_api_health.py
+├── database/            Reference SQL files
+├── docs/                Granular markdown docs
+└── tests/               pytest tests
 ```
 
 ## 5. Architecture
 
 ```
-┌─────────────────────────┐         ┌──────────────────────────┐
-│  React + Vite Frontend  │  HTTP   │   FastAPI Backend        │
-│  (port 5173)            │ ──────▶ │   (port 8000)            │
-│                         │         │                          │
-│  Login / Dashboard /    │         │   /api/auth /api/risk    │
-│  Risk Analysis /        │         │   /api/transactions      │
-│  Transactions /         │         │   /api/dashboard         │
-│  Alerts / Cases         │         │   /api/alerts /api/cases │
-└─────────────────────────┘         └────────────┬─────────────┘
-                                                 │
-                                                 ▼
-                                       ┌────────────────────┐
-                                       │  Risk Engine       │
-                                       │  (pure functions)  │
-                                       └──────────┬─────────┘
-                                                  │
-                                                  ▼
-                                       ┌────────────────────┐
-                                       │  SQLAlchemy ORM    │
-                                       │  + SQLite DB       │
-                                       └────────────────────┘
+┌───────────────────────────┐         ┌──────────────────────────────┐
+│ React + Vite Frontend     │  HTTP   │ FastAPI Backend              │
+│ (port 5173)               │ ──────▶ │ (port 8000)                  │
+│                           │         │                              │
+│ AuthPage                  │         │ /api/auth                    │
+│ UserHomePage              │         │ /api/risk                    │
+│ AdminDashboard            │         │ /api/transactions            │
+│ RiskAnalysisPage          │         │ /api/dashboard               │
+│ TransactionsPage          │         │ /api/alerts                  │
+│ AlertsPage / CasesPage    │         │ /api/cases                   │
+│ OnboardingPage            │         │ /api/onboarding              │
+│ TrafficMonitorPage        │  poll   │ /api/traffic                 │
+│  (live, 1.5s tick)        │ ◀────── │ /api/traffic/simulator       │
+└───────────────────────────┘         └────────────┬─────────────────┘
+                                                   │
+                                                   ▼
+                                       ┌────────────────────────────┐
+                                       │ Risk Engines (pure fns)    │
+                                       │ login / transaction /      │
+                                       │ onboarding / traffic       │
+                                       └──────────────┬─────────────┘
+                                                      │
+                                                      ▼
+                                  ┌──────────────────────────────────┐
+                                  │ SQLAlchemy ORM + SQLite DB       │
+                                  │ users, devices, login_events,    │
+                                  │ transactions, alerts,            │
+                                  │ fraud_cases,                     │
+                                  │ onboarding_applications,         │
+                                  │ traffic_events                   │
+                                  └──────────────────────────────────┘
+                                                      ▲
+                                                      │
+                                       ┌────────────────────────────┐
+                                       │ Traffic simulator thread   │
+                                       │ inserts synthetic events   │
+                                       └────────────────────────────┘
 ```
 
-### Data flow for a login attempt
+## 6. Risk Engines
 
-1. User submits the login form on `LoginPage`.
-2. Frontend calls `POST /api/auth/login`.
-3. Backend looks up the user, checks password, builds the signal set.
-4. `risk_service.calculate_login_risk` returns score + level + reasons + action.
-5. A `LoginEvent` row is persisted; devices are upserted on success.
-6. If level is Medium / High / Critical, an `Alert` is created.
-7. If level is High / Critical, a `FraudCase` is created and linked.
-8. The frontend renders the score card with reasons and recommended action.
+All engines live under `backend/app/services/`. Each is a pure function over
+the request data and the customer profile. Levels are derived from the score:
 
-## 6. Risk Scoring Engine
+| Score    | Level      |
+|----------|------------|
+| 0-30     | Low        |
+| 31-60    | Medium     |
+| 61-85    | High       |
+| 86-100   | Critical   |
 
-The engine lives in `backend/app/services/risk_service.py`. It is a pure
-function over the request data and the user profile. All thresholds are easy to
-tweak in one file.
+Scores are capped at 100.
 
-### Login signals
+### 6.1 Login Risk (`risk_service.calculate_login_risk`)
 
 | Signal                                         | Points |
 |------------------------------------------------|--------|
@@ -185,7 +195,16 @@ tweak in one file.
 | Login outside user's usual hours (non-night)   | +10    |
 | Suspicious IP (placeholder rule)               | +10    |
 
-### Transaction signals
+Recommended action:
+
+| Level    | Action                                                |
+|----------|-------------------------------------------------------|
+| Low      | Allow login                                           |
+| Medium   | Step-up verification required                         |
+| High     | Block login and alert fraud team                      |
+| Critical | Block account temporarily and create fraud case       |
+
+### 6.2 Transaction Risk (`risk_service.calculate_transaction_risk`)
 
 | Signal                                          | Points |
 |-------------------------------------------------|--------|
@@ -197,166 +216,241 @@ tweak in one file.
 | Transaction city != usual city                  | +15    |
 | Transaction country != usual country            | +25    |
 
-### Levels (cap at 100)
+Status / action:
 
-- 0-30 - **Low**
-- 31-60 - **Medium**
-- 61-85 - **High**
-- 86-100 - **Critical**
+| Level    | Status                  | Action                                       |
+|----------|-------------------------|----------------------------------------------|
+| Low      | Success                 | Process transaction                          |
+| Medium   | Verification Required   | Ask OTP or face verification                 |
+| High     | Blocked                 | Block transaction and send to fraud review   |
+| Critical | Blocked                 | Block transaction and freeze suspicious session |
 
-### Recommended actions
+### 6.3 Onboarding (KYC) Risk (`onboarding_service.calculate_onboarding_risk`)
 
-| Level    | Login                                      | Transaction                               |
-|----------|--------------------------------------------|-------------------------------------------|
-| Low      | Allow login                                | Process transaction                       |
-| Medium   | Step-up verification required              | Ask OTP or face verification              |
-| High     | Block login and alert fraud team           | Block transaction and send to fraud review|
-| Critical | Block account temporarily, create case     | Block transaction and freeze session      |
+| Signal                                                                   | Points |
+|--------------------------------------------------------------------------|--------|
+| Duplicate email already exists in users or applications                  | +25    |
+| Duplicate phone already exists in users or applications                  | +25    |
+| Duplicate document_id already exists in applications                     | +35    |
+| Same device used for more than 3 onboarding applications                 | +25    |
+| Same IP used for more than 5 onboarding applications                     | +25    |
+| document_match_score < 60                                                | +25    |
+| document_match_score < 40                                                | +40    |
+| selfie_match_score < 60                                                  | +25    |
+| selfie_match_score < 40                                                  | +40    |
+| Both document and selfie scores < 40                                     | +15    |
+| form_completion_seconds < 20                                             | +20    |
+| form_completion_seconds < 10                                             | +30    |
+| otp_attempts > 3                                                         | +20    |
+| otp_attempts > 5                                                         | +30    |
+| age below 18                                                             | +25    |
+| country not India                                                        | +25    |
 
-### Why this approach
+Special rule: a duplicate `document_id` always forces the level to at least
+**High**, even if the score did not cross 61.
 
-- **Explainable**: every score has a list of contributing reasons.
-- **Lightweight**: runs in milliseconds, easy to A/B test.
-- **ML-ready**: signal extraction is decoupled from scoring, so the same
-  features can later feed a supervised fraud model.
+Decision:
 
-## 7. Database Schema
+| Level    | Decision                                            |
+|----------|-----------------------------------------------------|
+| Low      | Approve onboarding                                  |
+| Medium   | Ask additional verification                         |
+| High     | Send to manual review                               |
+| Critical | Reject onboarding and block source                  |
 
-SQLite file: `backend/accountguard.db` (auto-created by SQLAlchemy on startup).
+Document IDs are dummy strings (e.g. `DOC1001`). Match scores are demo
+integers. There is no real OCR or face recognition.
+
+### 6.4 Fake Traffic Risk (`traffic_service.calculate_traffic_risk`)
+
+| Signal                                                            | Points |
+|-------------------------------------------------------------------|--------|
+| request_count > 10                                                | +20    |
+| request_count > 25                                                | +35    |
+| request_count > 50                                                | +50    |
+| Same IP seen > 10 times in traffic events                         | +25    |
+| Same device seen > 10 times in traffic events                     | +25    |
+| form_completion_seconds < 10                                      | +25    |
+| form_completion_seconds < 5                                       | +35    |
+| otp_attempts > 3                                                  | +20    |
+| otp_attempts > 5                                                  | +30    |
+| user-agent contains `python-requests`                             | +30    |
+| user-agent contains `selenium`                                    | +30    |
+| user-agent contains `headless`                                    | +30    |
+| user-agent contains `bot` (and not already counted)               | +25    |
+| empty / unknown user-agent                                        | +20    |
+| Suspicious user-agent + request_count > 25                        | +15    |
+| event_type == `credential_stuffing` and request_count > 25        | +20    |
+
+Action:
+
+| Level    | Action                                                |
+|----------|-------------------------------------------------------|
+| Low      | Allow traffic                                         |
+| Medium   | Rate limit request                                    |
+| High     | Challenge with CAPTCHA or step-up verification        |
+| Critical | Block IP/device temporarily                           |
+
+## 7. Real-Time Traffic Simulator
+
+`backend/app/services/traffic_simulator.py` implements a thread-safe singleton
+that generates synthetic `traffic_events` continuously.
+
+- Configurable rate per second (0.5 to 8 ev/s).
+- Three distributions: `mixed` (default), `normal` (only well-behaved users),
+  `attack` (only suspicious / critical templates).
+- Each generated event is scored by the same `calculate_traffic_risk` engine
+  used by the live API, so dashboards stay consistent.
+- Templates include credential stuffing, mass onboarding, scraping, headless
+  browsers, python-requests, normal mobile / desktop traffic.
+
+Endpoints:
+
+| Method | Path                                | Body                                                |
+|--------|-------------------------------------|-----------------------------------------------------|
+| POST   | `/api/traffic/simulator/start`      | `{ "rate_per_sec": 4, "distribution": "mixed" }`    |
+| POST   | `/api/traffic/simulator/stop`       | -                                                   |
+| GET    | `/api/traffic/simulator/status`     | -                                                   |
+
+When the simulator is running, the **Fake Traffic** page polls every 1.5 s and
+the **Admin Dashboard** polls every 2 s. The Risk Distribution pie, Top Fraud
+Reasons bar chart, and Activity Trends line chart now aggregate Login,
+Transaction, Onboarding **and** Traffic events, so they all move with the
+simulator.
+
+The traffic table flashes a 3-second highlight (and a small NEW chip) on rows
+that just arrived, so the live feed is visually obvious during a demo.
+
+## 8. Authentication and Roles
+
+The frontend has a clean Liquid Glass auth page at `/`:
+
+- Sign In / Sign Up tabs.
+- Customer / Admin role pills (matched against the user's actual role from the
+  database; mismatches are rejected).
+- Demo quick-fill buttons for the seeded customer and admin.
+
+After login, routing is role-based:
+
+| Role     | Default landing |
+|----------|-----------------|
+| Customer | `/home`         |
+| Admin    | `/dashboard`    |
+
+The sidebar shows different links per role. Customer-only pages: Home, Risk
+Analysis, Transactions, Login Simulator. Admin pages also include Dashboard,
+Alerts, Cases, KYC Onboarding, Fake Traffic.
+
+Auth state is stored in `localStorage` (`accountguard:user`) for demo
+simplicity. There is no JWT or session middleware. `RequireAuth` guards all
+protected routes; admin-only routes are gated with `role="admin"`.
+
+Backend endpoints used:
+
+- `POST /api/auth/login` - returns user + risk score; sign-in is rejected if
+  the risk level is High or Critical.
+- `POST /api/auth/register` - creates a new user (defaults to `customer`).
+
+## 9. Database Schema
+
+SQLite file: `backend/accountguard.db`. Tables are auto-created on startup. A
+demo seed runs only when the `users` table is empty.
 
 ### users
-
-| Column                       | Type    | Notes                |
-|------------------------------|---------|----------------------|
-| id                           | INTEGER | PK                   |
-| name                         | TEXT    |                      |
-| email                        | TEXT    | UNIQUE               |
-| password                     | TEXT    | plain text, demo only|
-| phone                        | TEXT    |                      |
-| role                         | TEXT    | customer / admin     |
-| usual_city                   | TEXT    |                      |
-| usual_country                | TEXT    |                      |
-| usual_device_id              | TEXT    |                      |
-| usual_login_start_hour       | INTEGER |                      |
-| usual_login_end_hour         | INTEGER |                      |
-| average_transaction_amount   | REAL    |                      |
-| created_at                   | TS      |                      |
+`id, name, email (unique), password (plain demo), phone, role, usual_city,
+usual_country, usual_device_id, usual_login_start_hour, usual_login_end_hour,
+average_transaction_amount, created_at`
 
 ### devices
-`id, user_id, device_id, device_name, browser, os, is_trusted, first_seen, last_seen`
+`id, user_id, device_id, device_name, browser, os, is_trusted, first_seen,
+last_seen`
 
 ### login_events
 `id, user_id, email, device_id, browser, os, ip_address, city, country,
 login_hour, is_successful, risk_score, risk_level, risk_reasons,
 recommended_action, created_at`
 
-`risk_reasons` is a comma-separated string for portability.
-
 ### transactions
 `id, user_id, amount, beneficiary_id, beneficiary_name, is_new_beneficiary,
 city, country, transaction_hour, risk_score, risk_level, risk_reasons, status,
 created_at`
 
-`status` ∈ {Success, Verification Required, Blocked}.
-
 ### alerts
-`id, user_id, alert_type, risk_level, message, status, created_at`
-
-`status` ∈ {Open, Reviewing, Resolved, False Positive}.
+`id, user_id, alert_type (Login | Transaction), risk_level, message, status
+(Open | Reviewing | Resolved | False Positive), created_at`
 
 ### fraud_cases
-`id, user_id, alert_id, risk_score, case_status, admin_notes, created_at, updated_at`
+`id, user_id, alert_id, risk_score, case_status (Pending | Under Review |
+Blocked | Resolved | False Positive), admin_notes, created_at, updated_at`
 
-`case_status` ∈ {Pending, Under Review, Blocked, Resolved, False Positive}.
+### onboarding_applications
+`id, full_name, email, phone, dob, city, country, device_id, ip_address,
+document_id, document_match_score, selfie_match_score,
+form_completion_seconds, otp_attempts, risk_score, risk_level, risk_reasons,
+decision, created_at`
 
-The reference DDL is in `database/schema.sql`.
+### traffic_events
+`id, event_type, email, ip_address, device_id, user_agent, request_path,
+request_count, form_completion_seconds, otp_attempts, risk_score, risk_level,
+risk_reasons, action_taken, created_at`
 
-## 8. API Reference
+`risk_reasons` is stored as a comma-separated string for portability.
+
+## 10. API Reference
 
 Interactive Swagger UI: **http://localhost:8000/docs**
 ReDoc: **http://localhost:8000/redoc**
 
 ### Health
 
-| Method | Path           | Response                                      |
-|--------|----------------|-----------------------------------------------|
-| GET    | `/`            | `{ "message": "AccountGuard AI backend is running" }` |
-| GET    | `/api/health`  | `{ "status": "ok", "service": "AccountGuard AI" }`    |
+| Method | Path           |
+|--------|----------------|
+| GET    | `/`            |
+| GET    | `/api/health`  |
 
 ### Auth
 
-#### POST /api/auth/login
-
-Request:
-```json
-{
-  "email": "jyot@example.com",
-  "password": "123456",
-  "device_id": "android_001",
-  "device_name": "Samsung Android",
-  "browser": "Chrome",
-  "os": "Android",
-  "ip_address": "192.168.1.10",
-  "city": "Surat",
-  "country": "India",
-  "login_hour": 11
-}
-```
-
-Response:
-```json
-{
-  "success": true,
-  "message": "Login processed",
-  "user": { "id": 1, "name": "Jyot Vanani", "email": "jyot@example.com", "role": "customer" },
-  "risk_score": 0,
-  "risk_level": "Low",
-  "risk_reasons": ["Known device", "Known location", "Normal login time"],
-  "recommended_action": "Allow login"
-}
-```
-
-Notes:
-- Wrong passwords still create a `LoginEvent` and contribute `+20` to the score.
-- An `Alert` is auto-created for Medium / High / Critical.
-- A `FraudCase` is auto-created for High / Critical.
+- `POST /api/auth/login` - request: `email, password, device_id, device_name,
+  browser, os, ip_address, city, country, login_hour`. Response: `success,
+  user, risk_score, risk_level, risk_reasons[], recommended_action`.
+- `POST /api/auth/register` - request: `name, email, password, phone, role`.
+  Response: `success, message, user`.
 
 ### Risk
 
-#### POST /api/risk/analyze-login
-Same payload shape as login (no password required). Returns score / level /
-reasons / action without persisting.
-
-#### GET /api/risk/user/{user_id}
-Returns the most recent 50 login events for a user.
+- `POST /api/risk/analyze-login` - same shape as login (no password). Returns
+  score / level / reasons / action without persisting.
+- `GET /api/risk/user/{user_id}` - last 50 login events for the user.
 
 ### Transactions
 
-#### POST /api/transactions
-```json
-{
-  "user_id": 1,
-  "amount": 90000,
-  "beneficiary_id": "BEN999",
-  "beneficiary_name": "Unknown Receiver",
-  "is_new_beneficiary": true,
-  "city": "Delhi",
-  "country": "India",
-  "transaction_hour": 2
-}
-```
-
-#### GET /api/transactions
-Returns the full transaction history (most recent first).
+- `POST /api/transactions` - create + score a transaction.
+- `GET /api/transactions` - all transactions (most recent first).
 
 ### Dashboard
 
-| Method | Path                                | Returns                       |
-|--------|-------------------------------------|-------------------------------|
-| GET    | `/api/dashboard/summary`            | `{ total_users, total_logins, total_transactions, total_alerts, high_risk_logins, open_cases }` |
-| GET    | `/api/dashboard/risk-distribution`  | `[{ name: "Low", value: 12 }, ...]` |
-| GET    | `/api/dashboard/fraud-reasons`      | `[{ reason, count }, ...]`    |
-| GET    | `/api/dashboard/login-trends`       | last 7 days, `[{ date, logins, suspicious }]` |
+| Method | Path                                | Returns                                                                                  |
+|--------|-------------------------------------|------------------------------------------------------------------------------------------|
+| GET    | `/api/dashboard/summary`            | totals + open cases + onboarding counts + traffic counts                                  |
+| GET    | `/api/dashboard/risk-distribution`  | logins + transactions + traffic + onboarding combined per risk level                     |
+| GET    | `/api/dashboard/fraud-reasons`      | top reasons aggregated across login, transaction, onboarding and traffic events          |
+| GET    | `/api/dashboard/login-trends`       | last 7 days, `[ { date, logins, traffic, suspicious } ]` (logins + traffic + suspicious) |
+
+`summary` payload:
+```json
+{
+  "total_users": 3,
+  "total_logins": 14,
+  "total_transactions": 16,
+  "total_alerts": 17,
+  "high_risk_logins": 3,
+  "open_cases": 13,
+  "total_onboarding_applications": 7,
+  "high_risk_onboarding_applications": 6,
+  "total_traffic_events": 264,
+  "critical_traffic_events": 136
+}
+```
 
 ### Alerts
 
@@ -367,72 +461,116 @@ Returns the full transaction history (most recent first).
 
 ### Cases
 
-| Method | Path                       | Body                                                     |
-|--------|----------------------------|----------------------------------------------------------|
-| GET    | `/api/cases`               | -                                                        |
-| PATCH  | `/api/cases/{case_id}`     | `{ "case_status": "Under Review", "admin_notes": "..." }` |
+| Method | Path                       | Body                                                       |
+|--------|----------------------------|------------------------------------------------------------|
+| GET    | `/api/cases`               | -                                                          |
+| PATCH  | `/api/cases/{case_id}`     | `{ "case_status": "Under Review", "admin_notes": "..." }`  |
 
-### Error format
+### Onboarding
 
-FastAPI raises `HTTPException` with a JSON body like:
-```json
-{ "detail": "Alert not found" }
-```
+| Method | Path                                       | Notes                                       |
+|--------|--------------------------------------------|---------------------------------------------|
+| POST   | `/api/onboarding/apply`                    | submit + score an application               |
+| GET    | `/api/onboarding/applications`             | list                                        |
+| GET    | `/api/onboarding/applications/{id}`        | one                                         |
+| PATCH  | `/api/onboarding/applications/{id}`        | `{ "decision": "Manual review" }`           |
 
-## 9. Frontend Pages and Components
+### Traffic
+
+| Method | Path                              | Notes                                       |
+|--------|-----------------------------------|---------------------------------------------|
+| POST   | `/api/traffic/analyze`            | analyse a single event                      |
+| GET    | `/api/traffic/events`             | list of recent events                       |
+| GET    | `/api/traffic/summary`            | totals, high-risk, critical, blocked        |
+| POST   | `/api/traffic/simulator/start`    | `{ rate_per_sec, distribution }`            |
+| POST   | `/api/traffic/simulator/stop`     | stop the background thread                  |
+| GET    | `/api/traffic/simulator/status`   | running flag, rate, count, started_at       |
+
+## 11. Frontend Pages and Components
 
 ### Routes
 
-| Path             | Page                  |
-|------------------|-----------------------|
-| `/`              | LoginPage             |
-| `/dashboard`     | AdminDashboard        |
-| `/risk-analysis` | RiskAnalysisPage      |
-| `/transactions`  | TransactionsPage      |
-| `/alerts`        | AlertsPage            |
-| `/cases`         | CasesPage             |
-| `*`              | NotFoundPage          |
+| Path               | Page                  | Access     |
+|--------------------|-----------------------|------------|
+| `/`                | AuthPage              | public     |
+| `/home`            | UserHomePage          | any user   |
+| `/dashboard`       | AdminDashboard        | admin      |
+| `/risk-analysis`   | RiskAnalysisPage      | any user   |
+| `/transactions`    | TransactionsPage      | any user   |
+| `/alerts`          | AlertsPage            | admin      |
+| `/cases`           | CasesPage             | admin      |
+| `/onboarding`      | OnboardingPage        | admin      |
+| `/traffic-monitor` | TrafficMonitorPage    | admin      |
+| `/login-simulator` | LoginPage (simulator) | any user   |
+| `*`                | NotFoundPage          | public     |
 
 ### Pages
 
-- **LoginPage** - form with email, password, device id/name, browser, OS, IP,
-  city, country, login hour. Four preset buttons (Normal, Suspicious, Critical,
-  Admin). Calls `POST /api/auth/login` and renders the risk card.
-- **AdminDashboard** - 6 stat cards plus 3 charts (risk pie, top reasons bar,
-  7-day login trend line) and a recent alerts strip.
-- **RiskAnalysisPage** - quick "what-if" tester for the engine without
-  persisting (`POST /api/risk/analyze-login`).
-- **TransactionsPage** - submit a transaction with 3 preset buttons
-  (Normal / High / Critical) and see the full transaction table.
-- **AlertsPage** - table of all alerts with inline status update.
-- **CasesPage** - fraud cases with status + admin notes editing.
+- **AuthPage** - Sign In / Sign Up tabs, role pills, validation against the
+  user's role in the DB.
+- **UserHomePage** - private customer landing showing recent login activity,
+  recent transactions, and quick action buttons.
+- **AdminDashboard** - 10 stat cards (users, logins, transactions, alerts,
+  high-risk logins, open cases, onboarding, high-risk onboarding, traffic,
+  critical traffic) + 3 charts + recent alerts. Auto-polls every 2 s while the
+  simulator runs and shows a `LIVE simulator · X ev/s` pill.
+- **RiskAnalysisPage** - what-if tester for the login engine.
+- **TransactionsPage** - submit a transaction with 3 preset buttons; full
+  transaction table.
+- **AlertsPage** - all alerts with inline status update.
+- **CasesPage** - fraud cases with case_status and admin_notes editing.
+- **OnboardingPage** - submit a KYC application with 3 preset buttons; full
+  applications table with decisions.
+- **TrafficMonitorPage** - simulator panel (rate, distribution, start / stop),
+  3 single-event presets, 4 stat cards, live feed table where new rows flash
+  for 3 seconds.
+- **LoginPage** - the login simulator (multi-field form, 4 presets).
 - **NotFoundPage** - simple 404.
 
 ### Components
 
 `Navbar`, `Sidebar`, `Layout`, `RiskBadge`, `RiskScoreCard`, `StatCard`,
-`AlertCard`, `Loader`.
+`AlertCard`, `Loader`. Auth context lives in `src/auth/AuthContext.jsx` and
+the `RequireAuth` HOC is in `src/auth/RequireAuth.jsx`.
 
 ### Charts (Recharts)
 
-- `RiskDistributionChart` - pie chart of login risk levels.
-- `FraudReasonChart` - bar chart of top reason counts.
-- `LoginTrendChart` - line chart with `logins` and `suspicious` series.
+- `RiskDistributionChart` - pie of all risk-level events combined.
+- `FraudReasonChart` - top 10 reasons across login, transaction, traffic,
+  onboarding.
+- `LoginTrendChart` - 3 series: logins, traffic, suspicious (Medium+ across
+  logins and traffic).
 
 ### API client
 
-`src/api/apiClient.js` is a single Axios instance using
+`src/api/apiClient.js` is a single Axios instance that uses
 `import.meta.env.VITE_API_BASE_URL` with a fallback of
-`http://localhost:8000/api`. Domain modules
-(`authApi`, `riskApi`, `transactionApi`, `dashboardApi`, `alertApi`, `caseApi`)
-wrap individual endpoints.
+`http://localhost:8000/api`. Domain modules: `authApi`, `riskApi`,
+`transactionApi`, `dashboardApi`, `alertApi`, `caseApi`, `onboardingApi`,
+`trafficApi`.
 
-### Styling
+## 12. UI Theme - Liquid Glass
 
-Plain CSS in `src/index.css`. Soft shadows, 12px radius, dark blue sidebar,
-green/orange/red/dark-red badges for Low/Medium/High/Critical.
+All UI is themed Apple-style Liquid Glass:
 
-## 10. Setup and Run
+- Animated mesh gradient background (drifting purple / cyan / pink blobs) on
+  the auth page and a calmer version across the rest of the app.
+- Frosted cards: `background: rgba(255, 255, 255, 0.55)` +
+  `backdrop-filter: blur(18-28px) saturate(180-200%)`, translucent borders,
+  inset highlight.
+- Stat cards have a coloured gradient bar across the top tied to the accent.
+- Primary buttons use an indigo→violet gradient with a soft glow; danger
+  buttons use red→rose; light buttons are translucent white.
+- Pill segmented control on the auth page (Sign In / Sign Up); role pills for
+  Customer / Admin.
+- Risk badges use translucent semantic colours (green / amber / red); Critical
+  has a deep-red gradient with shadow.
+- LIVE indicator: pulsing white dot inside a red gradient pill.
+- New traffic rows flash a 3-second indigo highlight bar plus a "NEW" chip.
+- Tables, inputs, scrollbars, tooltips, alert cards, risk-score cards all
+  reskinned consistently.
+
+## 13. Setup and Run
 
 ### Prerequisites
 
@@ -443,6 +581,7 @@ green/orange/red/dark-red badges for Low/Medium/High/Critical.
 ### Backend
 
 Windows:
+
 ```
 cd backend
 python -m venv venv
@@ -452,6 +591,7 @@ uvicorn main:app --reload
 ```
 
 Mac / Linux:
+
 ```
 cd backend
 python3 -m venv venv
@@ -460,7 +600,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-Backend serves at http://localhost:8000. Swagger at http://localhost:8000/docs.
+Backend at http://localhost:8000. Swagger at http://localhost:8000/docs.
 
 ### Frontend
 
@@ -470,15 +610,10 @@ npm install
 npm run dev
 ```
 
-Frontend serves at http://localhost:5173. Optional: copy
-`frontend/.env.example` to `frontend/.env` and set
-`VITE_API_BASE_URL=http://localhost:8000/api` if needed.
+Frontend at http://localhost:5173. Optional `.env` for `VITE_API_BASE_URL`
+override.
 
-## 11. Demo Scenarios
-
-The demo seed inserts 2 users, 2 devices, 5 login events, 3 transactions,
-5 alerts, 3 fraud cases. The Login and Transactions pages have preset buttons
-that auto-fill the form for these flows.
+## 14. Demo Scenarios
 
 ### Demo credentials
 
@@ -487,25 +622,48 @@ that auto-fill the form for these flows.
 | Customer | jyot@example.com  | 123456   |
 | Admin    | admin@example.com | admin123 |
 
-### Login scenarios
+### Live attack demo
 
-1. **Normal Login** - known device, known city, normal hour. Risk Low, allow.
-2. **Suspicious Login** - new Windows laptop, Delhi, 2 AM. Risk High, step-up.
-3. **Critical Login** - wrong password, Russia, unknown Linux device, 3 AM.
-   Risk Critical, block account, fraud case created.
-4. **Admin Login** - admin user from Ahmedabad. Risk Low, allow.
+1. Sign in as **Admin**.
+2. Open **Fake Traffic** in the sidebar.
+3. Set rate to 4 ev/s, distribution to **Attack wave**, click **Start
+   simulator**.
+4. Open **Dashboard** in another tab. Watch every chart and stat card move in
+   real time.
+5. Click **Stop simulator** to return to a quiet state.
 
-### Transaction scenarios
+### Login simulator (single events)
 
-1. **Normal** - ₹1,000 to known beneficiary in Surat at 14:00. Low, success.
-2. **High Risk** - ₹90,000 to a new beneficiary in Delhi at 2 AM. High, blocked.
-3. **Critical** - ₹1,50,000 to a foreign beneficiary in Russia at 3 AM.
-   Critical, blocked.
+The Login Simulator page (`/login-simulator`) has four preset buttons:
 
-After running any scenario, open the Dashboard, Alerts, and Cases pages to see
-the engine output in context.
+- **Normal** - score 0, allow.
+- **Suspicious** - score around 60-70, step-up.
+- **Critical** - score 100, block + create fraud case.
+- **Admin** - score around 0, allow.
 
-## 12. Testing
+### Transactions
+
+- **Normal** - ₹1,000 to known beneficiary - Low, success.
+- **High Risk** - ₹90,000 to new beneficiary in Delhi at 2 AM - High, blocked.
+- **Critical** - ₹1,50,000 to a foreign beneficiary in Russia at 3 AM -
+  Critical, blocked.
+
+### Onboarding
+
+- **Normal** - good document and selfie scores, India - Low, approve.
+- **Suspicious** - low document score, fast form, OTP retries - Medium / High,
+  manual review.
+- **Critical** - underage, foreign country, very low scores, very fast form -
+  Critical, reject and block source.
+
+### Single fake traffic events
+
+- **Normal** - human Chrome session - Low, allow.
+- **Bot** - python-requests, 35 reqs, 3s form, 7 OTPs - Critical, block.
+- **Critical** - HeadlessChrome Selenium, 75 reqs, 2s form, 10 OTPs -
+  Critical, block.
+
+## 15. Testing
 
 ```
 pip install pytest
@@ -513,50 +671,53 @@ pytest tests -q
 ```
 
 Three risk-engine assertions plus a backend health smoke test (4 tests total).
-The tests do not need a running server.
+Tests do not need a running server.
 
-## 13. Security and Data Notes
+## 16. Security and Data Notes
 
-This is a **hackathon prototype**. Do not use it as-is for real banking.
+This is a **hackathon prototype**. Do not use as-is for real banking.
 
 - Passwords are stored in plain text for demo simplicity.
-- There is no JWT, session, or CSRF protection.
+- There is no JWT / session / CSRF protection.
 - CORS is permissive for the local dev server.
-- All data is synthetic. No real customer info, IP geolocation, Aadhaar, PAN,
-  or bank data is used.
-- The "suspicious IP" rule is a placeholder that flags non-private addresses;
-  it is not a real reputation feed.
+- All data is synthetic; there is no real KYC, IP geolocation, Aadhaar, PAN,
+  or banking data.
+- The "suspicious IP" rule is a placeholder; not a real reputation feed.
+- Document IDs are dummy strings; document_match_score and selfie_match_score
+  are demo integers and there is **no** real OCR or face recognition.
+- The traffic simulator generates synthetic events with no real PII.
 
-For a production version, see [Future Scope](#15-future-scope).
+## 17. Troubleshooting
 
-## 14. Troubleshooting
+**Backend port 8000 already in use** - kill the process or run on a different
+port (`uvicorn main:app --reload --port 8001`) and update `VITE_API_BASE_URL`.
 
-**Backend port 8000 already in use**
-- `netstat -ano | findstr :8000` (Windows) and kill the PID, or run on a
-  different port: `uvicorn main:app --reload --port 8001` and point the
-  frontend at it via `VITE_API_BASE_URL`.
+**Frontend cannot reach the backend** - confirm both servers are running and
+check the browser console for CORS errors. The backend allows ports 5173 /
+3000 plus a permissive `*` for local dev.
 
-**Frontend cannot reach the backend**
-- Confirm both servers are running.
-- Check the browser console: a CORS error usually means the frontend is calling
-  a different origin. The backend allows 5173/3000 + `*` by default.
+**Dashboard charts do not move while the simulator runs** - confirm the
+simulator is actually streaming (`GET /api/traffic/simulator/status`) and that
+the page is the **Admin Dashboard** (admin role). Polling only kicks in while
+`status.running` is true.
 
-**Dashboard is empty on first run**
-- The seed only fires when the `users` table is empty. Stop the backend, delete
-  `backend/accountguard.db`, and start again to reset.
+**Charts feel stale** - the backend `/api/dashboard/risk-distribution`,
+`/fraud-reasons`, and `/login-trends` endpoints aggregate across all event
+sources. If counts seem stuck, check that the underlying tables are
+accumulating with `GET /api/traffic/summary` and `/api/dashboard/summary`.
 
-**`pip install` fails on Windows**
-- Make sure your venv is activated (`venv\Scripts\activate`). If pyodbc /
-  compiler errors appear, you can ignore them - this project only needs the
-  packages in `requirements.txt`.
+**`pip install` fails on Windows** - confirm the venv is activated
+(`venv\Scripts\activate`).
 
-**`npm install` is slow or stalls**
-- First install can take a few minutes. Retry with `npm install --no-audit
-  --no-fund` to skip the audit phase.
+**`npm install` is slow or stalls** - first install can take a few minutes.
+Retry with `npm install --no-audit --no-fund` to skip the audit phase.
 
-## 15. Future Scope
+**Reset the demo data** - stop the backend, delete `backend/accountguard.db`,
+restart the server. The seed will repopulate the database.
 
-1. Train a real ML model on historical fraud labels (gradient boosting / NN).
+## 18. Future Scope
+
+1. Real ML model trained on historical fraud labels (gradient boosting / NN).
 2. Device fingerprinting (canvas, WebGL, font hashing).
 3. IP reputation API integration (e.g., MaxMind, IPQS).
 4. Behavioural biometrics (typing rhythm, mouse movement).
@@ -566,8 +727,10 @@ For a production version, see [Future Scope](#15-future-scope).
 8. Fraud-team workflow (assign, escalate, SLA timers, audit log).
 9. Explainable AI dashboard with SHAP-style feature attribution.
 10. Multi-channel coverage: mobile banking, net banking, UPI, ATM, call center.
+11. WebSocket push for the live traffic feed (instead of polling).
+12. Real session management (JWT or HttpOnly cookies) and password hashing.
 
 ---
 
-For a quick start, see [README.md](README.md).
-For granular docs, see the `docs/` folder.
+For a quick start, see [README.md](README.md). For granular per-feature notes,
+see the `docs/` folder.
